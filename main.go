@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"flag"
+	"fmt"
+	"github.com/fatih/color"
 	"net"
 	"os"
+	"telecon/input"
 	"telecon/logger"
 	"telecon/network"
 	"telecon/utils"
@@ -14,26 +17,37 @@ import (
 const (
 	VERSION  = "2.0.0"
 	CODENAME = "Elite"
-	BUILD    = "1"
+	BUILD    = "3"
 )
 
 var client Client
 
 var log logger.Logger = logger.Logger{}
 
+var username *string = flag.String("username", "changeme", "Your username")
+var password *string = flag.String("password", "", "In case you are an admin on target server, you have to provide a password to authenticate or else you'll be kicked")
+var server *string = flag.String("server", "localhost:9000", "Target chat server")
+
 func main() {
 	flag.Parse()
-	log.Info("Starting Telecon v" + VERSION + " Bx" + BUILD + " [" + CODENAME + "]")
 
-	conn, err := net.Dial("tcp", "localhost:9000")
+	if *username == "changeme" {
+		log.Info("Enter your username using `-username` flag")
+		Stop()
+	}
+
+	log.Info("Starting Telecon-Client v" + VERSION + " Bx" + BUILD + " [" + CODENAME + "]")
+	cf := color.New(color.FgGreen).SprintFunc()
+	log.Info(fmt.Sprintf("Connecting to %s as %s", cf(*server), cf(*username)))
+	conn, err := net.Dial("tcp", *server)
 	if err != nil {
 		log.Critical(err)
 	}
 
 	client = Client{
 		conn,
-		"Primus",
-		"SomePassword",
+		*username,
+		*password,
 		make(chan network.Packet),
 		make(chan network.Packet),
 		false,
@@ -51,6 +65,9 @@ func main() {
 				idle = true
 				break
 			}
+			if client.logged {
+				break
+			}
 		}
 		if idle {
 			log.Info("Connection was idle state")
@@ -59,6 +76,8 @@ func main() {
 		}
 	}()
 
+	input.SetTarget(client)
+	go input.Start()
 	// read from connection
 	for {
 		var buffer bytes.Buffer
@@ -78,7 +97,6 @@ func main() {
 			buffer.Reset()
 			buffer.Write(rest)
 			for _, p := range packets {
-				p.Dump()
 				client.input <- p
 			}
 		}
